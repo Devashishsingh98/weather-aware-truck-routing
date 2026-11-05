@@ -18,8 +18,10 @@ def get_session() -> requests.Session:
         session = requests.Session()
         retry = Retry(
             total=2,
-            connect=2,
-            read=2,
+            connect=1,
+            # Never re-send after a read timeout: on a slow upstream that
+            # multiplied the wait (3 x 45s) past gunicorn's worker timeout.
+            read=0,
             backoff_factor=0.4,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=frozenset(["GET"]),
@@ -32,9 +34,12 @@ def get_session() -> requests.Session:
     return _session
 
 
-def get_json(url: str, params: dict | None = None, timeout: float = 25) -> object:
+CONNECT_TIMEOUT = 5.0
+
+
+def get_json(url: str, params: dict | None = None, timeout: float = 15) -> object:
     try:
-        response = get_session().get(url, params=params, timeout=timeout)
+        response = get_session().get(url, params=params, timeout=(CONNECT_TIMEOUT, timeout))
     except requests.Timeout as exc:
         raise ExternalServiceError("A routing or weather service timed out. Try the haul again.") from exc
     except requests.RequestException as exc:

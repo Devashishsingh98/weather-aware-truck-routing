@@ -71,7 +71,7 @@ def fetch_timezone(point: LatLon) -> str:
         f"{OPEN_METEO_URL}?latitude={point.lat:.4f}&longitude={point.lon:.4f}"
         "&timezone=auto&forecast_days=1&current=temperature_2m"
     )
-    payload = get_json(url, timeout=20)
+    payload = get_json(url, timeout=10)
     if isinstance(payload, list):
         payload = payload[0] if payload else {}
     if not isinstance(payload, dict):
@@ -124,7 +124,7 @@ def _download(points: list[LatLon], past_days: int, forecast_days: int) -> list[
         "&wind_speed_unit=mph&precipitation_unit=inch"
         f"&timezone=GMT&forecast_days={forecast_days}&past_days={past_days}"
     )
-    payload = get_json(url, timeout=45)
+    payload = get_json(url, timeout=20)
     if isinstance(payload, dict) and payload.get("error"):
         reason = payload.get("reason") or "Weather service rejected the forecast request."
         raise ExternalServiceError(str(reason))

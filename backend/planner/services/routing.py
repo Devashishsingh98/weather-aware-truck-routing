@@ -11,6 +11,7 @@ driving routes.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from planner.services.config import OSRM_BASE_URL
@@ -40,6 +41,9 @@ VIA_ATTEMPTS = (
     (0.55, -1, 0.40),
 )
 SEPARATION_MILES = 8.0
+# Waypoint detours are optional extras; never let them hold the request open.
+VIA_BUDGET_SECONDS = 20.0
+VIA_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass
@@ -73,12 +77,16 @@ def build_three_routes(origin: LatLon, destination: LatLon) -> tuple[list[RawRou
     )
     base = chosen[0]
     used_names: set[str] = set()
+    started = time.monotonic()
     for fraction, side, offset_fraction in VIA_ATTEMPTS:
         if len(chosen) >= 3:
             break
+        if time.monotonic() - started > VIA_BUDGET_SECONDS:
+            logger.warning("Stopping waypoint detours: time budget spent")
+            break
         via, anchor = via_point(base, fraction, side, offset_fraction)
         try:
-            routed = request_routes([origin, via, destination])
+            routed = request_routes([origin, via, destination], timeout=VIA_TIMEOUT_SECONDS)
         except ExternalServiceError:
             logger.info("Skipping a waypoint offset that OSRM could not route")
             continue
@@ -108,7 +116,7 @@ def build_three_routes(origin: LatLon, destination: LatLon) -> tuple[list[RawRou
     return chosen, note
 
 
-def request_routes(points: list[LatLon]) -> list[RawRoute]:
+def request_routes(points: list[LatLon], timeout: float = 20) -> list[RawRoute]:
     path = ";".join(f"{point.lon:.6f},{point.lat:.6f}" for point in points)
     url = f"{OSRM_BASE_URL}/route/v1/driving/{path}"
     payload = get_json(
@@ -120,7 +128,7 @@ def request_routes(points: list[LatLon]) -> list[RawRoute]:
             "overview": "full",
             "annotations": "duration,distance",
         },
-        timeout=40,
+        timeout=timeout,
     )
     if not isinstance(payload, dict):
         raise ExternalServiceError("Routing service returned an unexpected payload.")
